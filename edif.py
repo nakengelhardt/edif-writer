@@ -4,7 +4,7 @@ _Port = namedtuple("_Port", "name direction")
 _Cell = namedtuple("_Cell", "name ports")
 _Property = namedtuple("_Property", "name value")
 _Instance = namedtuple("_Instance", "name cell properties")
-
+_NetBranch = namedtuple("_NetBranch", "portname instancename")
   
 def _write_cells(cells):
 	r = ""
@@ -46,3 +46,57 @@ def _write_instantiations(instances, cell_library):
 		instantiations += """
 					)"""
 	return instantiations
+
+def _write_connections(connections):
+	r = ""
+	for netname, branches in connections.items():
+		r += """
+					(net {0}
+						(joined""".format(netname)
+		for branch in branches:
+			r += """
+							(portRef {0}{1})""".format(branch.portname, "" if branch.instancename == "" else " (instanceRef {})".format(branch.instancename))
+		r += """
+						)
+					)"""
+	return r
+
+def write_edif(cells,ios,instances,connections,cell_library,design_name,part,manufacturer):
+	r = """
+(edif {0}
+	(edifVersion 2 0 0)
+	(edifLevel 0)
+	(keywordMap (keywordLevel 0))
+	(external {1}
+		(edifLevel 0)
+		(technology (numberDefinition))""".format(design_name,cell_library)
+	r += _write_cells(cells)
+	r += """
+	)
+	(library {0}_lib
+		(edifLevel 0)
+		(technology (numberDefinition))
+		(cell {0}
+			(cellType GENERIC)
+				(view view_1
+					(viewType NETLIST)
+					(interface""".format(design_name)
+	r += _write_io(ios)
+	r += """
+						(designator "{0}")
+					)
+					(contents""".format(part)
+	r += _write_instantiations(instances, cell_library)
+	r += _write_connections(connections)
+	r += """
+					)
+				)
+		)
+	)
+	(design {0}
+		(cellRef {0} (libraryRef {0}_lib))
+		(property PART (string "{1}") (owner "{2}"))
+	)
+)""".format(design_name,part,manufacturer)
+	
+	return r
