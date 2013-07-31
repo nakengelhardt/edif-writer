@@ -2,6 +2,7 @@ from collections import OrderedDict
 from migen.fhdl.std import *
 from migen.fhdl.namer import Namespace, build_namespace
 from migen.fhdl.tools import list_special_ios
+from migen.fhdl.specials import SynthesisDirective
 
 import edif
 
@@ -22,6 +23,8 @@ class Test(Module):
 
 t = Test()
 ios = {t.a, t.b, t.s}
+name = "Example"
 part = "xc6slx45-fgg484-2"
 cell_library = "UNISIMS"
-print(edif.convert(t, ios))
+vendor = "Xilinx"
+print(edif.convert(t, ios, name, cell_library, part, vendor))

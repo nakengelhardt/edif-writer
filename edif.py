@@ -16,55 +16,52 @@ def _write_cells(cells):
 	r = ""
 	for cell in cells:
 		r += """
-	(cell {0.name}
-		(cellType GENERIC)
-			(view view_1
-				(viewType NETLIST)
-				(interface""".format(cell)
+		(cell {0.name}
+			(cellType GENERIC)
+				(view view_1
+					(viewType NETLIST)
+					(interface""".format(cell)
 		for port in cell.ports:
 			r += """
-					(port {0.name} (direction {0.direction}))""".format(port)
+						(port {0.name} (direction {0.direction}))""".format(port)
 		r += """
+					)
 				)
-			)
-	)"""
+		)"""
 	return r
 
 def _write_io(ios):
 	r = ""
 	for s in ios:
 		r += """
-					(port {0.name} (direction {0.direction}))""".format(s)
+						(port {0.name} (direction {0.direction}))""".format(s)
 	return r
 
 def _write_instantiations(instances, cell_library):
 	instantiations = ""
 	for instance in instances:
 		instantiations += """
-					(instance {0.name}
-						(viewRef view_1 (cellRef {0.cell} (libraryRef {1})))""".format(instance,cell_library)
-		# if param.flavor == "EDIF_FLAVOR_XILINX":
-		# 	instantiations += """
-		# 				(property XSTLIB (boolean (true)) (owner \"Xilinx\"))"""
+						(instance {0.name}
+							(viewRef view_1 (cellRef {0.cell} (libraryRef {1})))""".format(instance,cell_library)
 		for prop in instance.properties:
 			instantiations += """
-						(property {0} (string "{1}"))""".format(prop.name,prop.value)
+							(property {0} (string "{1}"))""".format(prop.name,prop.value)
 		instantiations += """
-					)"""
+						)"""
 	return instantiations
 
 def _write_connections(connections):
 	r = ""
 	for netname, branches in connections.items():
 		r += """
-					(net {0}
-						(joined""".format(netname)
+						(net {0}
+							(joined""".format(netname)
 		for branch in branches:
 			r += """
-							(portRef {0}{1})""".format(branch.portname, "" if branch.instancename == "" else " (instanceRef {})".format(branch.instancename))
+								(portRef {0}{1})""".format(branch.portname, "" if branch.instancename == "" else " (instanceRef {})".format(branch.instancename))
 		r += """
-						)
-					)"""
+							)
+						)"""
 	return r
 
 def _write_edif(cells,ios,instances,connections,cell_library,design_name,part,vendor):
@@ -122,9 +119,11 @@ def _generate_cells(f):
 					raise NotImplementedError("Unsupported instance item")
 			if special.of in cell_dict:
 				if set(port_list) != set(cell_dict[special.of]):
-					raise ValueError("All instance must have the same ports for EDIF conversion")
+					raise ValueError("All instances must have the same ports for EDIF conversion")
 			else:
 				cell_dict[special.of] = port_list
+		else:
+			raise ValueError("Edif conversion can only handle synthesized fragments")
 	return [_Cell(k, v) for k, v in cell_dict.items()]
 
 def _generate_instances(f,ns):
@@ -142,6 +141,8 @@ def _generate_instances(f,ns):
 				else:
 					raise NotImplementedError("Unsupported instance item")
 			instances.append(_Instance(name=ns.get_name(special), cell=special.of, properties=props))
+		else:
+			raise ValueError("Edif conversion can only handle synthesized fragments")
 	return instances
 
 def _generate_ios(f, ios, ns):
@@ -167,6 +168,8 @@ def _generate_connections(f, ios, ns):
 					pass
 				else:
 					raise NotImplementedError("Unsupported instance item")
+		else:
+			raise ValueError("Edif conversion can only handle synthesized fragments")
 	for s in ios:
 		io = ns.get_name(s)
 		if io not in r:
@@ -174,14 +177,16 @@ def _generate_connections(f, ios, ns):
 		r[io].append(_NetBranch(portname=io, instancename=""))
 	return r
 
-def convert(f, ios=None, name="top", cell_library="UNISIM", part="xc6slx45-fgg484-2",  vendor="Xilinx"):
+def convert(f, ios, name, cell_library, part, vendor):
 	if not isinstance(f, _Fragment):
 		f = f.get_fragment()
+	if f.comb != [] or f.sync != {} :
+		raise ValueError("Edif conversion can only handle synthesized fragments")
 	if ios is None:
 		ios = set()
-	ns = build_namespace(list_special_ios(f, True, True, True))
 	cells = _generate_cells(f)
+	ns = build_namespace(list_special_ios(f, True, True, True))
 	instances = _generate_instances(f, ns)
 	inouts = _generate_ios(f, ios, ns)
 	connections = _generate_connections(f, ios, ns)
-	return _write_edif(cells,inouts,instances,connections,cell_library,name,part,vendor)
+	return _write_edif(cells, inouts, instances, connections, cell_library, name, part, vendor)
