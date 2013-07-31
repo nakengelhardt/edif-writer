@@ -1,3 +1,8 @@
+from collections import OrderedDict
+from migen.fhdl.std import *
+from migen.fhdl.namer import Namespace, build_namespace
+from migen.fhdl.tools import list_special_ios
+
 from collections import namedtuple
 
 _Port = namedtuple("_Port", "name direction")
@@ -61,9 +66,8 @@ def _write_connections(connections):
 					)"""
 	return r
 
-def write_edif(cells,ios,instances,connections,cell_library,design_name,part,manufacturer):
-	r = """
-(edif {0}
+def write_edif(cells,ios,instances,connections,cell_library,design_name,part,vendor):
+	r = """(edif {0}
 	(edifVersion 2 0 0)
 	(edifLevel 0)
 	(keywordMap (keywordLevel 0))
@@ -97,6 +101,83 @@ def write_edif(cells,ios,instances,connections,cell_library,design_name,part,man
 		(cellRef {0} (libraryRef {0}_lib))
 		(property PART (string "{1}") (owner "{2}"))
 	)
-)""".format(design_name,part,manufacturer)
+)""".format(design_name,part,vendor)
 	
 	return r
+
+def _generate_cells(f):
+	cell_dict = OrderedDict()
+	for special in f.specials:
+		if isinstance(special, Instance):
+			port_list = []
+			for port in special.items:
+				if isinstance(port, Instance.Input):
+					port_list.append(_Port(port.name, "INPUT"))
+				elif isinstance(port, Instance.Output):
+					port_list.append(_Port(port.name, "OUTPUT"))
+				elif isinstance(port, Instance.Parameter):
+					pass
+				else:
+					raise NotImplementedError("Unsupported instance item")
+			if special.of in cell_dict:
+				if set(port_list) != set(cell_dict[special.of]):
+					raise ValueError("All instance must have the same ports for EDIF conversion")
+			else:
+				cell_dict[special.of] = port_list
+	return [_Cell(k, v) for k, v in cell_dict.items()]
+
+def _generate_instances(f,ns):
+	instances = []
+	for special in f.specials:
+		if isinstance(special, Instance):	
+			props = []
+			for prop in special.items:
+				if isinstance(prop, Instance.Input):
+					pass
+				elif isinstance(prop, Instance.Output):
+					pass
+				elif isinstance(prop, Instance.Parameter):
+					props.append(_Property(name=prop.name, value=prop.value))
+				else:
+					raise NotImplementedError("Unsupported instance item")
+			instances.append(_Instance(name=ns.get_name(special), cell=special.of, properties=props))
+	return instances
+
+def _generate_ios(f, ios, ns):
+	outs = list_special_ios(f, False, True, False)
+	r = []
+	for io in ios:
+		direction = "OUTPUT" if io in outs else "INPUT"
+		r.append(_Port(name=ns.get_name(io), direction=direction))
+	return r
+
+def _generate_connections(f, ios, ns):
+	r = OrderedDict()
+	for special in f.specials:
+		if isinstance(special, Instance):
+			instname = ns.get_name(special)
+			for port in special.items:
+				if isinstance(port, Instance.Input) or isinstance(port, Instance.Output):
+					s = ns.get_name(port.expr)
+					if s not in r:
+						r[s] = []
+					r[s].append(_NetBranch(portname=port.name, instancename=instname))
+				elif isinstance(port, Instance.Parameter):
+					pass
+				else:
+					raise NotImplementedError("Unsupported instance item")
+	for s in ios:
+		io = ns.get_name(s)
+		if io not in r:
+			r[io] = []
+		r[io].append(_NetBranch(portname=io, instancename=""))
+	return r
+
+def convert(module, ios, name="top", cell_library="UNISIM", part="xc6slx45-fgg484-2",  vendor="Xilinx"):
+	f = module.get_fragment()
+	ns = build_namespace(list_special_ios(f, True, True, True))
+	cells = _generate_cells(f)
+	instances = _generate_instances(f, ns)
+	inouts = _generate_ios(f, ios, ns)
+	connections = _generate_connections(f, ios, ns)
+	return write_edif(cells,inouts,instances,connections,cell_library,name,part,vendor)
