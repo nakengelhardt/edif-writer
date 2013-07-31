@@ -2,6 +2,7 @@ from collections import OrderedDict
 from migen.fhdl.std import *
 from migen.fhdl.namer import Namespace, build_namespace
 from migen.fhdl.tools import list_special_ios
+from migen.fhdl.structure import _Fragment
 
 from collections import namedtuple
 
@@ -66,7 +67,7 @@ def _write_connections(connections):
 					)"""
 	return r
 
-def write_edif(cells,ios,instances,connections,cell_library,design_name,part,vendor):
+def _write_edif(cells,ios,instances,connections,cell_library,design_name,part,vendor):
 	r = """(edif {0}
 	(edifVersion 2 0 0)
 	(edifLevel 0)
@@ -173,11 +174,14 @@ def _generate_connections(f, ios, ns):
 		r[io].append(_NetBranch(portname=io, instancename=""))
 	return r
 
-def convert(module, ios, name="top", cell_library="UNISIM", part="xc6slx45-fgg484-2",  vendor="Xilinx"):
-	f = module.get_fragment()
+def convert(f, ios=None, name="top", cell_library="UNISIM", part="xc6slx45-fgg484-2",  vendor="Xilinx"):
+	if not isinstance(f, _Fragment):
+		f = f.get_fragment()
+	if ios is None:
+		ios = set()
 	ns = build_namespace(list_special_ios(f, True, True, True))
 	cells = _generate_cells(f)
 	instances = _generate_instances(f, ns)
 	inouts = _generate_ios(f, ios, ns)
 	connections = _generate_connections(f, ios, ns)
-	return write_edif(cells,inouts,instances,connections,cell_library,name,part,vendor)
+	return _write_edif(cells,inouts,instances,connections,cell_library,name,part,vendor)
